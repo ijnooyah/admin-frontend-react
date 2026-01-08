@@ -1,61 +1,44 @@
-import { useEffect, useState } from 'react';
-import axios from '../api/axios';
-import { Table, Button, Space, Card, message, Tag } from 'antd';
+import React, { useState, useEffect } from 'react';
+import { Table, Input, Select, Button, Space, Card, Tag } from 'antd';
+import { SearchOutlined, ReloadOutlined } from '@ant-design/icons';
+import axios from '../api/axios'; 
 
 const UserListPage = () => {
-  const [users, setUsers] = useState([]); // 서버에서 받은 유저 리스트 (List<UserDTO>)
+  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [lastId, setLastId] = useState(null); // 커서 페이징을 위한 마지막 ID 저장
-  const [hasNext, setHasNext] = useState(false);
-  
-  // 유저 데이터를 가져오는 함수
-  const fetchUsers = (cursorId = null) => {
-    setLoading(true);
 
-    // 1. 백엔드 DTO(AdminUserSearchCondition) 구조와 똑같이 객체를 만듭니다.
-    const searchCondition = {
-        cursorId: cursorId,             // 커서 ID
-        size: 10,                       // 한 번에 가져올 사이즈
-        searchInput: "",                // 검색어 (나중에 input과 연결)
-        searchType: "ALL",              // 검색 타입
-        sortType: "CREATED_AT",         // 정렬 기준
-        order: "ASC",                   // 정렬 방향
-        // 리스트(roles, providers)는 배열로 보내면 스프링이 알아서 List로 받는다
-        roles: ["ROLE_USER", "ROLE_ADMIN"], 
-        providers: ["LOCAL", "GOOGLE"]
-    };
+  // 
+  const [params, setParams] = useState({
+    searchType: 'ALL',
+    searchInput: '',
+    roles: [],      
+    size: 10,
+    sortType: 'CREATED_AT',
+    order: 'DESC'
+  });
 
-    axios.get('http://localhost:8080/api/v1/admin/users/search', {
-        params: searchCondition,        // 여기서 객체를 통째로 넘긴다
-        withCredentials: true
-    })
-    .then(res => {
-        const responseBody = res.data.body; // CommonResponse의 body 접근
-        if (responseBody) {
-        const newUsers = responseBody.users || [];
-        
-        if (cursorId) {
-            setUsers(prev => [...prev, ...newUsers]);
-        } else {
-            setUsers(newUsers);
-        }
-
-        // 백엔드가 준 데이터를 상태에 저장
-        setLastId(responseBody.nextCursorId);
-        setHasNext(responseBody.hasNext); // 여기서 true/false 저장
-        }
-    })
-    .catch(err => {
-        console.error("검색 실패:", err);
-        message.error("데이터를 불러오지 못했습니다.");
-    })
-    .finally(() => setLoading(false));
+  //데이터를 가져오는 함수
+  const fetchUsers = async () => {
+       setLoading(true);
+    try {
+       const res = await axios.get('/api/v1/admin/users/search', { params });      
+       setUsers(res.data.body.users);
+    } catch (error) {
+        console.error("데이터 로드 실패:", error);
+    } finally {
+        setLoading(false);
+    }
   };
 
-  // 화면이 처음 켜질 때 실행 (Spring의 @PostConstruct 느낌)
+  // 처음 로딩 시 실행
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  // 검색 버튼 클릭 시 실행
+  const handleSearch = () => {
+    fetchUsers();
+  };
 
   // 테이블 컬럼 정의 (표의 헤더 설정)
   const columns = [
@@ -87,23 +70,61 @@ const UserListPage = () => {
     ];
 
   return (
-    <Card title="유저 관리 (Admin Only)" style={{ margin: '20px' }}>
-        <Table 
-            dataSource={users} 
-            columns={columns} 
-            rowKey="id" 
-            loading={loading}
-            pagination={false} // 커서 페이징이므로 기본 페이징은 끔
-        />
-        {/* 조건부 렌더링: hasNext가 true일 때만 버튼을 보여준다 */}
-        {hasNext && (
-        <div style={{ textAlign: 'center', marginTop: '20px' }}>
-            <Button onClick={() => fetchUsers(lastId)} loading={loading}>
-            더보기
-            </Button>
-        </div>
-        )}
-    </Card>
+    <Space direction="vertical" style={{ width: '100%' }} size="middle">
+      <Card size="small" title="사용자 필터링">
+        <Space wrap>
+          {/* 검색 타입 선택 */}
+          <Select 
+            value={params.searchType} 
+            style={{ width: 120 }}
+            onChange={(val) => setParams({...params, searchType: val})}
+            options={[
+              { value: 'ALL', label: '전체' },
+              { value: 'EMAIL', label: '이메일' },
+              { value: 'NICKNAME', label: '닉네임' }
+            ]}
+          />
+
+          {/* 검색어 입력 */}
+          <Input 
+            placeholder="검색어 입력" 
+            style={{ width: 200 }}
+            value={params.searchInput}
+            onChange={(e) => setParams({...params, searchInput: e.target.value})}
+            onPressEnter={handleSearch} 
+          />
+
+          {/* 권한 다중 선택 */}
+          <Select
+            mode="multiple"
+            placeholder="권한 선택"
+            style={{ minWidth: 200 }}
+            value={params.roles}
+            onChange={(vals) => setParams({...params, roles: vals})}
+            options={[
+                { value: 'ROLE_USER', label: '일반 유저' },
+                { value: 'ROLE_MANAGER', label: '매니저' }, 
+                { value: 'ROLE_ADMIN', label: '관리자' }
+            ]}
+            />
+          <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch} loading={loading}>
+            검색
+          </Button>
+          
+          <Button icon={<ReloadOutlined />} onClick={() => window.location.reload()}>
+            초기화
+          </Button>
+        </Space>
+      </Card>
+
+      <Table 
+        dataSource={users} 
+        columns={columns} 
+        rowKey="id" 
+        loading={loading}
+        pagination={false} 
+      />
+    </Space>
   );
 };
 
